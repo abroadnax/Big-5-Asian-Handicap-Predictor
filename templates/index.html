@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Upcoming · AH{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">Upcoming matches</h1>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>League</th>
+        <th>Match</th>
+        <th>BP-ag</th>
+        <th>BP-xg</th>
+        <th>WB-ag</th>
+        <th>WB-xg</th>
+        <th>Avg</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for league_name, rows in grouped.items() %}
+        <!-- League header row -->
+        <tr class="table-secondary">
+          <td colspan="8"><strong>{{ league_name }}</strong></td>
+        </tr>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.kickoff.strftime('%Y-%m-%d') }}</td>
+          <td>{{ league_name }}</td>
+          <td>{{ r.home }} vs {{ r.away }}</td>
+          <td>{{ r.bp_ag is not none and ('%+.2f'|format(r.bp_ag)) or '' }}</td>
+          <td>{{ r.bp_xg is not none and ('%+.2f'|format(r.bp_xg)) or '' }}</td>
+          <td>{{ r.wb_ag is not none and ('%+.2f'|format(r.wb_ag)) or '' }}</td>
+          <td>{{ r.wb_xg is not none and ('%+.2f'|format(r.wb_xg)) or '' }}</td>
+          <td><strong>{{ r.avg is not none and ('%+.2f'|format(r.avg)) or '' }}</strong></td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

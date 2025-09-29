@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ league.name }} · AH{% endblock %}
+{% block content %}
+<h1 class="h4">{{ league.name }}</h1>
+<div id="edge-chart" class="my-3"></div>
+<script>
+  const rows = [
+    {% for m, p in rows %}
+      { match_id: "{{ m.id }}", kickoff: "{{ m.kickoff_utc.isoformat() }}", ah: {{ p.ah_line }},
+        edge: {{ p.edge_home }}, prob: {{ p.p_home_cover }} },
+    {% endfor %}
+  ];
+  const x = rows.map(r => r.match_id);
+  const y = rows.map(r => Math.round(r.edge*1000)/10);
+  const data = [{ x, y, type: 'bar', hovertemplate: '%{x}<br>%{y:.1f}% EV<extra></extra>' }];
+  Plotly.newPlot('edge-chart', data, { title: 'Home-side EV (%)', xaxis: { automargin: true }, yaxis: { ticksuffix:'%' } });
+</script>
+
+<div class="table-responsive">
+<table class="table table-sm">
+  <thead><tr><th>Kickoff (UTC)</th><th>Match</th><th>AH (home)</th><th>P(home)</th><th>Fair</th><th>Edge</th></tr></thead>
+  <tbody>
+    {% for m, p in rows %}
+    <tr>
+      <td>{{ m.kickoff_utc.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td><a href="/matches/{{ m.id }}">{{ m.home_team_id }} vs {{ m.away_team_id }}</a></td>
+      <td>{{ '%+.2f'|format(p.ah_line) }}</td>
+      <td>{{ '%.1f%%'|format(p.p_home_cover*100) }}</td>
+      <td>{{ '%.2f'|format(p.fair_home_decimal) }}</td>
+      <td class="{% if p.edge_home>0 %}text-success{% elif p.edge_home<0 %}text-danger{% endif %}">{{ '%.2f%%'|format(p.edge_home*100) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

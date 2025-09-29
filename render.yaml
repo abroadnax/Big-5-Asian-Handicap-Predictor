@@ -1,32 +1,13 @@
 services:
   - type: web
-    name: ah-preds
-    env: python
-    plan: free
+    name: big5-ah-predictor
+    runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:create_app --bind 0.0.0.0:10000
-    envVars:
-      - key: SECRET_KEY
-        generateValue: true
-      - key: DATABASE_URL
-        fromDatabase:
-          name: ahpreds-db
-          property: connectionString
+    startCommand: gunicorn 'app:create_app()'
 
-databases:
-  - name: ahpreds-db
-    plan: free
-
-jobs:
-  - name: daily-refresh
-    type: cron
-    schedule: "0 7 * * *"
-    env: python
-    plan: free
+  - type: cron
+    name: refresh-predictions
+    runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python manage.py
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: ahpreds-db
-          property: connectionString
+    command: python refresh.py
+    schedule: "0 12 * * *"   # daily at 12:00 UTC

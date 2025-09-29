@@ -10,3 +10,4 @@ scipy
 plotly
 penaltyblog
 soccerdata
+lxml==5.3.2

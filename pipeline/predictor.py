@@ -15,7 +15,7 @@ PRE_LEAGUES = ["Big 5 European Leagues Combined"]
 SEASONS = [2024, 2025, 2026]
 
 # Window controls
-FORECAST_DAYS = 4        # how far ahead to include
+FORECAST_DAYS = 7        # how far ahead to include
 START_DAYS_BACK = 1      # include this many days *before* today (1 keeps yesterday)
 DC_RHO = 0.00175         # Dixon–Coles time-decay parameter
 # ----------------------------------------------------

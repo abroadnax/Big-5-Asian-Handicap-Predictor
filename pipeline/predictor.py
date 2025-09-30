@@ -11,8 +11,13 @@ import soccerdata as sd
 
 # ---------------------- CONFIG ----------------------
 # Edit these if you like (or override via env/app)
-PRE_LEAGUES = ["Big 5 European Leagues Combined", "ENG-Championship"]
-SEASONS = [2024, 2025, 2026]
+PRE_LEAGUES = ["ENG-Premier League",
+    "ESP-La Liga",
+    "ITA-Serie A",
+    "GER-Bundesliga",
+    "FRA-Ligue 1",
+    "ENG-Championship",]
+SEASONS = [2024, 2025]
 
 # Window controls
 FORECAST_DAYS = 4        # how far ahead to include

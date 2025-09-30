@@ -1,72 +1,31 @@
 # pipeline/predictor.py
 from __future__ import annotations
 
+from datetime import date
 import pandas as pd
 import numpy as np
 
-from penaltyblog.models.bivariate import BivariatePoissonGoalModel
-from penaltyblog.models.weibull import WeibullCopulaGoalsModel
+# Import only the classic models to avoid Aesara/BLAS issues
+from penaltyblog import models as pb
 import soccerdata as sd
 
 # ---------------------- CONFIG ----------------------
-# FBref leagues (valid schedule IDs)
-PRE_LEAGUES = [
-    "ENG-Premier League",
-    "ESP-La Liga",
-    "ITA-Serie A",
-    "GER-Bundesliga",
-    "FRA-Ligue 1",
-    "ENG-Championship",
-]
-
-# Keep as ints; we'll coerce to "YYYY-YYYY" for FBref.
-SEASONS = [2024, 2025]
+# Edit these if you like (or override via env/app)
+PRE_LEAGUES = ["Big 5 European Leagues Combined"]
+SEASONS = [2024, 2025, 2026]
 
 # Window controls
-FORECAST_DAYS = 7        # how far ahead to include
-START_DAYS_BACK = 1      # include this many days before today (1 keeps yesterday)
+FORECAST_DAYS = 4        # how far ahead to include
+START_DAYS_BACK = 1      # include this many days *before* today (1 keeps yesterday)
 DC_RHO = 0.00175         # Dixon–Coles time-decay parameter
 # ----------------------------------------------------
-
-def _coerce_fbref_seasons(seasons):
-    out = []
-    for s in seasons:
-        if isinstance(s, int):
-            out.append(f"{s}-{s+1}")
-        else:
-            out.append(s)
-    return out
-
-TEAMNAME_REPLACEMENTS = {
-    "Birmingham": "Birmingham City",
-    "Cardiff": "Cardiff City",
-    "Coventry": "Coventry City",
-    "Hull": "Hull City",
-    "Leicester": "Leicester City",
-    "Middlesborough": "Middlesbrough",
-    "Preston": "Preston North End",
-    "QPR": "Queens Park Rangers",
-    "Rotherham": "Rotherham United",
-    "Sheff Wed": "Sheffield Wednesday",
-    "Stoke": "Stoke City",
-    "Sunderland AFC": "Sunderland",
-    "West Brom": "West Bromwich Albion",
-}
-
-def dixon_coles_weights(dates: pd.Series, rho: float) -> np.ndarray:
-    """
-    Classic DC time-decay weights: w_i = exp(-rho * age_in_days).
-    Uses the max(date) in the series as 'today' anchor.
-    """
-    d = pd.to_datetime(dates).dt.normalize()
-    anchor = d.max()
-    age_days = (anchor - d).dt.days.clip(lower=0).astype(float)
-    return np.exp(-rho * age_days).values
 
 # tz-naive UTC midnights (safe for comparisons with datetime64[ns])
 TODAY_UTC = pd.Timestamp(pd.Timestamp.utcnow().date())
 START_UTC = TODAY_UTC - pd.Timedelta(days=START_DAYS_BACK)
 END_UTC   = TODAY_UTC + pd.Timedelta(days=FORECAST_DAYS)
+
+
 
 def _clean_schedule(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -109,6 +68,7 @@ def _clean_schedule(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+
 def _predict_frame(model, upcoming: pd.DataFrame, kind: str, use_xg: bool) -> pd.DataFrame:
     """
     Predict ONLY home/away goal expectations for upcoming fixtures.
@@ -131,6 +91,7 @@ def _predict_frame(model, upcoming: pd.DataFrame, kind: str, use_xg: bool) -> pd
         })
     return pd.DataFrame(rows)
 
+
 def _fit_and_predict(historical: pd.DataFrame, upcoming: pd.DataFrame):
     """
     Fit BP/WB models on:
@@ -141,11 +102,11 @@ def _fit_and_predict(historical: pd.DataFrame, upcoming: pd.DataFrame):
     # XG-based models (fit only if xG present)
     hist_xg = historical.dropna(subset=["xG", "xG.1"]).copy()
     if not hist_xg.empty:
-        bp_xg = BivariatePoissonGoalModel(
+        bp_xg = pb.BivariatePoissonGoalModel(
             hist_xg["xG"], hist_xg["xG.1"], hist_xg["Home"], hist_xg["Away"]
         )
         bp_xg.fit()
-        wb_xg = WeibullCopulaGoalsModel(
+        wb_xg = pb.WeibullCopulaGoalsModel(
             hist_xg["xG"], hist_xg["xG.1"], hist_xg["Home"], hist_xg["Away"]
         )
         wb_xg.fit()
@@ -153,19 +114,19 @@ def _fit_and_predict(historical: pd.DataFrame, upcoming: pd.DataFrame):
         bp_xg = wb_xg = None
 
     # Actual-goals models with Dixon–Coles time decay
-    w = dixon_coles_weights(historical["Date"], DC_RHO)
-    bp_ag = BivariatePoissonGoalModel(
+    w = pb.dixon_coles_weights(historical["Date"], DC_RHO)
+    bp_ag = pb.BivariatePoissonGoalModel(
         historical["Home Goals"], historical["Away Goals"],
         historical["Home"], historical["Away"], w
     )
     bp_ag.fit()
-    wb_ag = WeibullCopulaGoalsModel(
+    wb_ag = pb.WeibullCopulaGoalsModel(
         historical["Home Goals"], historical["Away Goals"],
         historical["Home"], historical["Away"], w
     )
     wb_ag.fit()
 
-    # Predictions: expectations only
+    # Predictions: only expectations
     df_bp_xg = _predict_frame(bp_xg, upcoming, "bp", True)
     df_wb_xg = _predict_frame(wb_xg, upcoming, "wb", True)
     df_bp_ag = _predict_frame(bp_ag, upcoming, "bp", False)
@@ -181,6 +142,7 @@ def _fit_and_predict(historical: pd.DataFrame, upcoming: pd.DataFrame):
         (df_wb_xg, "wb_home_xG", "wb_away_xG", "wb_home_handicap_xg"),
     ]:
         if not df_src.empty:
+            # df_src columns: League, Date, Home, Away, <home_exp>, <away_exp>
             tmp = df_src.rename(columns={
                 df_src.columns[4]: h_home,
                 df_src.columns[5]: h_away
@@ -207,21 +169,18 @@ def _fit_and_predict(historical: pd.DataFrame, upcoming: pd.DataFrame):
         "combined": combined,
     }
 
+
 def run_for_leagues(leagues: list[str], seasons: list[int]):
     """
     Pull schedules via soccerdata.FBref, split into historical vs upcoming
     using DATE-ONLY comparisons (UTC-normalized) so near-boundary games aren’t skipped.
     """
     results = {}
-    fb = sd.FBref(leagues=leagues, seasons=_coerce_fbref_seasons(seasons))
+    fb = sd.FBref(leagues=leagues, seasons=seasons)
     sched = fb.read_schedule()
 
     for lg, df_lg in sched.groupby(level=0):
         df = _clean_schedule(df_lg)
-
-        # Normalize a few short/variant names (helps consistency)
-        df["Home"] = df["Home"].replace(TEAMNAME_REPLACEMENTS)
-        df["Away"] = df["Away"].replace(TEAMNAME_REPLACEMENTS)
 
         # Normalize to date-only (UTC midnight), no tz
         date_only = pd.to_datetime(df["Date"], errors="coerce").dt.tz_localize(None).dt.normalize()

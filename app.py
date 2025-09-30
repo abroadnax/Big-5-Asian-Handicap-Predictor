@@ -5,6 +5,10 @@ from sqlalchemy.orm import aliased
 from models import db, League, Team, Match, Prediction
 from config import Config
 
+import os
+os.environ.setdefault("AESARA_FLAGS", "blas__ldflags=;cxx=")
+
+
 
 def create_app():
     app = Flask(__name__)

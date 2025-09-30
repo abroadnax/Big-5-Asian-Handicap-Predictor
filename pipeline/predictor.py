@@ -5,14 +5,13 @@ from datetime import date
 import pandas as pd
 import numpy as np
 
-# Import only the classic models to avoid Aesara/BLAS issues
 from penaltyblog import models as pb
 import soccerdata as sd
 
 # ---------------------- CONFIG ----------------------
 # Edit these if you like (or override via env/app)
 PRE_LEAGUES = ["Big 5 European Leagues Combined"]
-SEASONS = [2024, 2025, 2026]
+SEASONS = [2024, 2025]
 
 # Window controls
 FORECAST_DAYS = 7        # how far ahead to include
@@ -170,13 +169,14 @@ def _fit_and_predict(historical: pd.DataFrame, upcoming: pd.DataFrame):
     }
 
 
-def run_for_leagues(leagues: list[str], seasons: list[int]):
+
+def run_for_leagues(leagues: list[str], seasons: list[int]):	
     """
     Pull schedules via soccerdata.FBref, split into historical vs upcoming
     using DATE-ONLY comparisons (UTC-normalized) so near-boundary games aren’t skipped.
     """
     results = {}
-    fb = sd.FBref(leagues=leagues, seasons=seasons)
+    fb = sd.FBref(leagues=leagues, seasons=seasons, no_cache=True)
     sched = fb.read_schedule()
 
     for lg, df_lg in sched.groupby(level=0):

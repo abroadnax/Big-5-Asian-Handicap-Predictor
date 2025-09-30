@@ -1,0 +1,3 @@
+[console_scripts]
+aesara-cache = bin.aesara_cache:main
+

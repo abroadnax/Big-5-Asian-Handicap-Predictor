@@ -3,6 +3,9 @@ from models import db, League, Team, Match, Prediction
 from pipeline.predictor import run_for_leagues, PRE_LEAGUES, SEASONS
 from datetime import datetime
 
+import os
+os.environ.setdefault("AESARA_FLAGS", "blas__ldflags=;cxx=")
+
 app = create_app()
 
 def upsert_team(league_id, name):
@@ -13,6 +16,8 @@ def upsert_team(league_id, name):
 
 def make_match_id(league, date_dt, home, away):
     return f"{league}-{date_dt.strftime('%Y%m%d')}-{home}-{away}".replace(' ', '_')
+
+
 
 def refresh():
     results = run_for_leagues(PRE_LEAGUES, SEASONS)  # pulls fixtures + runs models

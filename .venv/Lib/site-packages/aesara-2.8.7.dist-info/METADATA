@@ -1,0 +1,54 @@
+Metadata-Version: 2.1
+Name: aesara
+Version: 2.8.7
+Summary: Optimizing compiler for evaluating mathematical expressions on CPUs and GPUs.
+Home-page: https://github.com/aesara-devs/aesara
+Author: aesara-devs
+Author-email: aesara.devs@gmail.com
+License: BSD
+Keywords: aesara,math,numerical,symbolic,blas,numpy,autodiff,differentiation
+Platform: Windows
+Platform: Linux
+Platform: Solaris
+Platform: Mac OS-X
+Platform: Unix
+Classifier: Development Status :: 6 - Mature
+Classifier: Intended Audience :: Education
+Classifier: Intended Audience :: Science/Research
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Programming Language :: Python
+Classifier: Topic :: Software Development :: Code Generators
+Classifier: Topic :: Software Development :: Compilers
+Classifier: Topic :: Scientific/Engineering :: Mathematics
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: Unix
+Classifier: Operating System :: MacOS
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Requires-Python: >=3.7
+Description-Content-Type: text/x-rst
+Requires-Dist: numpy (>=1.17.0)
+Requires-Dist: scipy (>=0.14)
+Requires-Dist: filelock
+Requires-Dist: etuples
+Requires-Dist: logical-unification
+Requires-Dist: miniKanren
+Requires-Dist: cons
+Requires-Dist: typing-extensions
+Requires-Dist: setuptools (>=48.0.0)
+
+Aesara is a Python library that allows you to define, optimize, and efficiently evaluate mathematical expressions involving multi-dimensional arrays. It is built on top of NumPy_. Aesara features:
+
+ * **tight integration with NumPy:** a similar interface to NumPy's. numpy.ndarrays are also used internally in Aesara-compiled functions.
+ * **efficient symbolic differentiation:** Aesara can compute derivatives for functions of one or many inputs.
+ * **speed and stability optimizations:** avoid nasty bugs when computing expressions such as log(1 + exp(x)) for large values of x.
+ * **dynamic C code generation:** evaluate expressions faster.
+ * **extensive unit-testing and self-verification:** includes tools for detecting and diagnosing bugs and/or potential problems.
+
+.. _NumPy: http://numpy.scipy.org/
+
+

@@ -18,9 +18,8 @@ soccerdata==1.8.7
 lxml==4.9.4
 
 # ---- Python 3.12+ Compatibility ----
-# Restores distutils for legacy libraries (e.g. undetected_chromedriver)
-distutils-py3
-setuptools==68.2.2
+# setuptools provides the distutils shim on Python 3.12+
+setuptools>=69.0
 setuptools-scm==7.1.0
 wheel
 packaging

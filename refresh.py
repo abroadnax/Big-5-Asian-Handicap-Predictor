@@ -15,6 +15,16 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+DB_URL = os.getenv("DATABASE_URL") or os.getenv("SQLALCHEMY_DATABASE_URI")
+
+if not DB_URL:
+    print("⚠️  No DATABASE_URL set — running in local/no-DB mode.")
+    DB_URL = "sqlite:///app.db"  # or skip DB entirely if you want
+
+if DB_URL.startswith("postgres://"):
+    DB_URL = "postgresql://" + DB_URL[len("postgres://"):]
+
+
 def redacted(url: str) -> str:
     if not url:
         return ""

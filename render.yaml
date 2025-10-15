@@ -4,7 +4,9 @@ services:
     env: python
     rootDirectory: .
     plan: free
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip setuptools wheel
+      pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
     envVars:
       - key: DATABASE_URL

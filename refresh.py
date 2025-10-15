@@ -1,87 +1,86 @@
-from __future__ import annotations
+# refresh.py
 import os
+import re
 import sys
 import runpy
 import logging
-import subprocess
-from datetime import datetime, timezone
+from contextlib import suppress
 
-from app import create_app
-from models import db  # ensures SQLAlchemy is bound once app context is active
+from sqlalchemy import create_engine, text
 
-# ---------- logging ----------
+LOG = logging.getLogger("refresh")
 logging.basicConfig(
-    level=os.environ.get("LOGLEVEL", "INFO"),
+    level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
-log = logging.getLogger("refresh")
 
+def redacted(url: str) -> str:
+    if not url:
+        return ""
+    return re.sub(r"://([^:]+):([^@]+)@", "://***:***@", url)
 
-def run_manage_py_inprocess(args: list[str]) -> None:
+def db_engine():
+    url = os.getenv("DATABASE_URL", "")
+    if not url:
+        LOG.error("DATABASE_URL is not set. Set it in Render -> Environment.")
+        sys.exit(2)
+    LOG.info("Using DB: %s", redacted(url))
+    return create_engine(url, pool_pre_ping=True)
+
+def run_manage_refresh():
     """
-    Execute manage.py in-process with runpy so it shares the Flask app context & DB session.
+    Calls your existing manage.py 'refresh' command in-process.
+    If your manage.py expects CLI args, we simulate them.
     """
-    original_argv = sys.argv[:]
+    LOG.info("Running manage.py refresh")
+    # Fake argv for manage.py if it reads sys.argv
+    argv_old = sys.argv[:]
     try:
-        sys.argv = ["manage.py"] + args
-        log.info("Running manage.py %s", " ".join(args))
+        sys.argv = ["manage.py", "refresh"]
+        # This executes your manage.py as if run from CLI.
         runpy.run_path("manage.py", run_name="__main__")
-        log.info("manage.py finished successfully (in-process)")
     finally:
-        sys.argv = original_argv
+        sys.argv = argv_old
 
-
-def run_manage_py_subprocess(args: list[str]) -> None:
+def db_check():
     """
-    Fallback: execute manage.py as a subprocess (isolation if runpy path fails).
+    Prove there is data in the DB *and* some in the next 7 days (UTC).
+    Fail the job loudly if not.
     """
-    cmd = [sys.executable, "manage.py"] + args
-    log.info("Running subprocess: %s", " ".join(cmd))
-    subprocess.run(cmd, check=True)
-    log.info("manage.py finished successfully (subprocess)")
+    eng = db_engine()
+    with eng.begin() as con:
+        # If your table is named differently, change 'predictions' here.
+        # The date filter uses ::date to avoid timezone confusion.
+        row = con.execute(text("""
+            SELECT
+              COUNT(*)                                  AS total,
+              MIN(match_date)                            AS min_dt,
+              MAX(match_date)                            AS max_dt,
+              COUNT(*) FILTER (
+                WHERE match_date::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+              )                                          AS upcoming7
+            FROM predictions
+        """)).one()
+        total, min_dt, max_dt, upcoming7 = row
+        LOG.info("DB CHECK: total=%s min=%s max=%s upcoming7=%s", total, min_dt, max_dt, upcoming7)
 
+        # Hard-fail if nothing usable was written, so Render marks this job FAILED.
+        if not total or int(upcoming7 or 0) == 0:
+            LOG.error("Refresh produced 0 usable rows (total=%s, upcoming7=%s).", total, upcoming7)
+            sys.exit(1)
 
-def refresh_predictions() -> None:
-    """
-    Entrypoint invoked by cron.
-    MANAGE_ARGS env var controls which manage.py command runs.
-      - e.g., MANAGE_ARGS="refresh"  -> python manage.py refresh
-      - e.g., MANAGE_ARGS="refresh --days 7"
-    If MANAGE_ARGS is unset, we try:
-      1) python manage.py refresh
-      2) python manage.py
-    """
-    manage_args = os.environ.get("MANAGE_ARGS", "").strip()
-    try_order: list[list[str]] = [manage_args.split()] if manage_args else [["refresh"], []]
-
-    for args in try_order:
-        try:
-            run_manage_py_inprocess(args)
-            return
-        except SystemExit as e:
-            # argparse-style error codes -> try next pattern
-            if getattr(e, "code", 0) not in (0, None):
-                log.warning("manage.py %s exited with code %s (in-process). Trying next pattern…", args, e.code)
-            else:
-                return
-        except Exception:
-            log.exception("In-process execution failed. Falling back to subprocess for args: %s", args)
-            run_manage_py_subprocess(args)
-            return
-
-    # If we got here, both patterns failed
-    raise RuntimeError("Failed to execute manage.py via all tried patterns.")
-
+def print_db_host():
+    u = os.getenv("DATABASE_URL", "")
+    host = ""
+    with suppress(Exception):
+        host = re.sub(r".*@", "", u).split("?")[0]
+    LOG.info("DB host: %s", host or "(unknown)")
 
 if __name__ == "__main__":
-    log.info("Starting refresh job at %s", datetime.now(timezone.utc).isoformat())
-    app = create_app()
-    with app.app_context():
-        refresh_predictions()
-        # If manage.py made DB changes using the same db.session (in-process path),
-        # ensure commit. (Subprocess path commits on its own.)
-        try:
-            db.session.commit()
-        except Exception:
-            pass
-    log.info("Refresh job complete.")
+    LOG.info("Starting refresh job")
+    print_db_host()
+    run_manage_refresh()
+    LOG.info("manage.py finished successfully (in-process)")
+    db_check()
+    LOG.info("Refresh job complete")

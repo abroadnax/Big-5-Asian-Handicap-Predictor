@@ -1,13 +1,26 @@
+# ---- Web + Database ----
 flask==3.0.3
 gunicorn==22.0.0
 Flask-SQLAlchemy==3.1.1
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.11
+
+# ---- Core Scientific Stack ----
+numpy==1.26.4
+pandas==2.2.2
+scipy==1.13.1
 python-dateutil==2.9.0.post0
 pytz==2024.1
-numpy==1.26.4
-pandas
-scipy
-plotly
+
+# ---- Visualization + Models ----
+plotly==5.22.0
 penaltyblog==1.2.0
 soccerdata==1.8.7
 lxml==4.9.4
+
+# ---- Python 3.12+ Compatibility ----
+# Restores distutils for legacy libraries (e.g. undetected_chromedriver)
+distutils-py3
+setuptools==68.2.2
+setuptools-scm==7.1.0
+wheel
+packaging

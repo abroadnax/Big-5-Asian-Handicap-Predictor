@@ -292,8 +292,8 @@ class _TestCommon:
             datsp = self.datsp_dtypes[dtype]
 
             assert_raises(ValueError, bool, datsp)
-            assert_(self.spcreator([1]))
-            assert_(not self.spcreator([0]))
+            assert_(self.spcreator([[1]]))
+            assert_(not self.spcreator([[0]]))
 
         if isinstance(self, TestDOK):
             pytest.skip("Cannot create a rank <= 2 DOK matrix.")
@@ -1230,13 +1230,13 @@ class _TestCommon:
         chk = self.datsp.todense(out=out)
         assert_array_equal(self.dat, out)
         assert_array_equal(self.dat, chk)
-        assert_(chk.base is out)
+        assert np.may_share_memory(chk, out)
         # Check with out array (matrix).
         out = asmatrix(np.zeros(self.datsp.shape, dtype=self.datsp.dtype))
         chk = self.datsp.todense(out=out)
         assert_array_equal(self.dat, out)
         assert_array_equal(self.dat, chk)
-        assert_(chk is out)
+        assert np.may_share_memory(chk, out)
         a = array([[1.,2.,3.]])
         dense_dot_dense = a @ self.dat
         check = a @ self.datsp.todense()
@@ -1336,9 +1336,8 @@ class _TestCommon:
         S = self.spcreator(D)
         if hasattr(S, 'data'):
             S.data.flags.writeable = False
-        if hasattr(S, 'indptr'):
+        if S.format in ('csr', 'csc', 'bsr'):
             S.indptr.flags.writeable = False
-        if hasattr(S, 'indices'):
             S.indices.flags.writeable = False
         for x in supported_dtypes:
             D_casted = D.astype(x)
@@ -2098,8 +2097,16 @@ class _TestCommon:
                 assert_equal(datsp.shape, sploaded.shape)
                 assert_array_equal(datsp.toarray(), sploaded.toarray())
                 assert_equal(datsp.format, sploaded.format)
+                # Hacky check for class member equality. This assumes that
+                # all instance variables are one of:
+                #  1. Plain numpy ndarrays
+                #  2. Tuples of ndarrays
+                #  3. Types that support equality comparison with ==
                 for key, val in datsp.__dict__.items():
                     if isinstance(val, np.ndarray):
+                        assert_array_equal(val, sploaded.__dict__[key])
+                    elif (isinstance(val, tuple) and val
+                          and isinstance(val[0], np.ndarray)):
                         assert_array_equal(val, sploaded.__dict__[key])
                     else:
                         assert_(val == sploaded.__dict__[key])
@@ -2648,21 +2655,14 @@ class _TestSlicing:
         assert_equal(a[1, ..., 1], b[1, ..., 1])
 
     def test_multiple_ellipsis_slicing(self):
-        b = asmatrix(arange(50).reshape(5,10))
-        a = self.spcreator(b)
+        a = self.spcreator(arange(6).reshape(3, 2))
 
-        with pytest.deprecated_call(match='removed in v1.13'):
-            assert_array_equal(a[..., ...].toarray(), b[:, :].A)
-        with pytest.deprecated_call(match='removed in v1.13'):
-            assert_array_equal(a[..., ..., ...].toarray(), b[:, :].A)
-        with pytest.deprecated_call(match='removed in v1.13'):
-            assert_array_equal(a[1, ..., ...].toarray(), b[1, :].A)
-        with pytest.deprecated_call(match='removed in v1.13'):
-            assert_array_equal(a[1:, ..., ...].toarray(), b[1:, :].A)
-        with pytest.deprecated_call(match='removed in v1.13'):
-            assert_array_equal(a[..., ..., 1:].toarray(), b[:, 1:].A)
-        with pytest.deprecated_call(match='removed in v1.13'):
-            assert_array_equal(a[..., ..., 1].toarray(), b[:, 1].A)
+        with pytest.raises(IndexError,
+                           match='an index can only have a single ellipsis'):
+            a[..., ...]
+        with pytest.raises(IndexError,
+                           match='an index can only have a single ellipsis'):
+            a[..., 1, ...]
 
 
 class _TestSlicingAssign:
@@ -2982,6 +2982,41 @@ class _TestFancyIndexing:
         assert_raises(IndexError, S.__getitem__, (I_bad,J))
         assert_raises(IndexError, S.__getitem__, (I,J_bad))
 
+    def test_missized_masking(self):
+        M, N = 5, 10
+
+        B = asmatrix(arange(M * N).reshape(M, N))
+        A = self.spcreator(B)
+
+        # Content of mask shouldn't matter, only its size
+        row_long = np.ones(M + 1, dtype=bool)
+        row_short = np.ones(M - 1, dtype=bool)
+        col_long = np.ones(N + 2, dtype=bool)
+        col_short = np.ones(N - 2, dtype=bool)
+
+        with pytest.raises(
+            IndexError,
+            match=rf"boolean row index has incorrect length: {M + 1} instead of {M}"
+        ):
+            _ = A[row_long, :]
+        with pytest.raises(
+            IndexError,
+            match=rf"boolean row index has incorrect length: {M - 1} instead of {M}"
+        ):
+            _ = A[row_short, :]
+
+        for i, j in itertools.product(
+            (row_long, row_short, slice(None)),
+            (col_long, col_short, slice(None)),
+        ):
+            if isinstance(i, slice) and isinstance(j, slice):
+                continue
+            with pytest.raises(
+                IndexError,
+                match=r"boolean \w+ index has incorrect length"
+            ):
+                _ = A[i, j]
+
     def test_fancy_indexing_boolean(self):
         np.random.seed(1234)  # make runs repeatable
 
@@ -3009,7 +3044,7 @@ class _TestFancyIndexing:
         Z3 = np.zeros((6, 11), dtype=bool)
         Z3[-1,0] = True
 
-        assert_equal(A[Z1], np.array([]))
+        assert_raises(IndexError, A.__getitem__, Z1)
         assert_raises(IndexError, A.__getitem__, Z2)
         assert_raises(IndexError, A.__getitem__, Z3)
         assert_raises((IndexError, ValueError), A.__getitem__, (X, 1))
@@ -3469,7 +3504,7 @@ class _TestMinMax:
         assert_equal(X.max(), -1)
 
         # and a fully sparse matrix
-        Z = self.spcreator(np.zeros(1))
+        Z = self.spcreator(np.zeros((1, 1)))
         assert_equal(Z.min(), 0)
         assert_equal(Z.max(), 0)
         assert_equal(Z.max().dtype, Z.dtype)
@@ -3749,8 +3784,8 @@ def sparse_test_class(getset=True, slicing=True, slicing_assign=True,
                 continue
             old_cls = names.get(name)
             if old_cls is not None:
-                raise ValueError("Test class {} overloads test {} defined in {}".format(
-                    cls.__name__, name, old_cls.__name__))
+                raise ValueError(f"Test class {cls.__name__} overloads test "
+                                 f"{name} defined in {old_cls.__name__}")
             names[name] = cls
 
     return type("TestBase", bases, {})
@@ -3815,6 +3850,10 @@ class TestCSR(sparse_test_class()):
         csr = csr_matrix(([2**63 + 1, 1], ([0, 1], [0, 1])), dtype=np.uint64)
         dense = array([[2**63 + 1, 0], [0, 1]], dtype=np.uint64)
         assert_array_equal(dense, csr.toarray())
+
+        # with duplicates (should sum the duplicates)
+        csr = csr_matrix(([1,1,1,1], ([0,2,2,0], [0,1,1,0])))
+        assert csr.nnz == 2
 
     def test_constructor5(self):
         # infer dimensions from arrays
@@ -4004,8 +4043,8 @@ class TestCSR(sparse_test_class()):
     def test_binop_explicit_zeros(self):
         # Check that binary ops don't introduce spurious explicit zeros.
         # See gh-9619 for context.
-        a = csr_matrix([0, 1, 0])
-        b = csr_matrix([1, 1, 0])
+        a = csr_matrix([[0, 1, 0]])
+        b = csr_matrix([[1, 1, 0]])
         assert (a + b).nnz == 2
         assert a.multiply(b).nnz == 1
 
@@ -4056,6 +4095,10 @@ class TestCSC(sparse_test_class()):
         ij = vstack((row,col))
         csc = csc_matrix((data,ij),(4,3))
         assert_array_equal(arange(12).reshape(4, 3), csc.toarray())
+
+        # with duplicates (should sum the duplicates)
+        csc = csc_matrix(([1,1,1,1], ([0,2,2,0], [0,1,1,0])))
+        assert csc.nnz == 2
 
     def test_constructor5(self):
         # infer dimensions from arrays
@@ -4470,6 +4513,13 @@ class TestCOO(sparse_test_class(getset=False,
         coo = coo_matrix(([1,1,1,1], ([0,2,2,0], [0,1,1,0])))
         dok = coo.todok()
         assert_array_equal(dok.toarray(), coo.toarray())
+
+    def test_tocompressed_duplicates(self):
+        coo = coo_matrix(([1,1,1,1], ([0,2,2,0], [0,1,1,0])))
+        csr = coo.tocsr()
+        assert_equal(csr.nnz + 2, coo.nnz)
+        csc = coo.tocsc()
+        assert_equal(csc.nnz + 2, coo.nnz)
 
     def test_eliminate_zeros(self):
         data = array([1, 0, 0, 0, 2, 0, 3, 0])

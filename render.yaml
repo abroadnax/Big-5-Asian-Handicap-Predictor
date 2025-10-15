@@ -1,13 +1,33 @@
 services:
   - type: web
-    name: big5-ah-predictor
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn 'app:create_app()'
+    name: big5-ah-web
+    env: python
+    rootDirectory: .
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DATABASE_URL
+        # Put the actual value in the Render UI. This line just tells Render
+        # "we will set this in the dashboard".
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: TZ
+        value: "UTC"
 
   - type: cron
-    name: refresh-predictions
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    command: python refresh.py
-    schedule: "0 12 * * *"   # daily at 12:00 UTC
+    name: big5-ah-refresh
+    env: python
+    rootDirectory: .
+    # every 3 hours; change if you like
+    schedule: "0 */3 * * *"
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python refresh.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: TZ
+        value: "UTC"

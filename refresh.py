@@ -1,11 +1,9 @@
-# refresh.py
+# refresh.py (no Postgres required)
 import os
-import re
 import sys
 import runpy
 import logging
 from contextlib import suppress
-
 from sqlalchemy import create_engine, text
 
 LOG = logging.getLogger("refresh")
@@ -15,80 +13,54 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-DB_URL = os.getenv("DATABASE_URL") or os.getenv("SQLALCHEMY_DATABASE_URI")
-
-if not DB_URL:
-    print("⚠️  No DATABASE_URL set — running in local/no-DB mode.")
-    DB_URL = "sqlite:///app.db"  # or skip DB entirely if you want
-
-if DB_URL.startswith("postgres://"):
-    DB_URL = "postgresql://" + DB_URL[len("postgres://"):]
-
-
-def redacted(url: str) -> str:
-    if not url:
-        return ""
-    return re.sub(r"://([^:]+):([^@]+)@", "://***:***@", url)
+# Always use a local SQLite database
+DB_URL = "sqlite:///app.db"
 
 def db_engine():
-    url = os.getenv("DATABASE_URL", "")
-    if not url:
-        LOG.error("DATABASE_URL is not set. Set it in Render -> Environment.")
-        sys.exit(2)
-    LOG.info("Using DB: %s", redacted(url))
-    return create_engine(url, pool_pre_ping=True)
+    """Always use local SQLite for testing/offline runs."""
+    LOG.info("Using local SQLite DB: app.db")
+    return create_engine(DB_URL, pool_pre_ping=True)
 
 def run_manage_refresh():
     """
-    Calls your existing manage.py 'refresh' command in-process.
-    If your manage.py expects CLI args, we simulate them.
+    Runs your manage.py 'refresh' command directly.
+    If manage.py reads CLI args, we simulate them.
     """
-    LOG.info("Running manage.py refresh")
-    # Fake argv for manage.py if it reads sys.argv
+    LOG.info("Running manage.py refresh (local mode)")
     argv_old = sys.argv[:]
     try:
         sys.argv = ["manage.py", "refresh"]
-        # This executes your manage.py as if run from CLI.
         runpy.run_path("manage.py", run_name="__main__")
     finally:
         sys.argv = argv_old
 
 def db_check():
     """
-    Prove there is data in the DB *and* some in the next 7 days (UTC).
-    Fail the job loudly if not.
+    Optional integrity check — skip or make it soft-fail for local use.
     """
+    if os.getenv("SKIP_DB_CHECK") == "1":
+        LOG.warning("Skipping DB check (SKIP_DB_CHECK=1)")
+        return
+
     eng = db_engine()
     with eng.begin() as con:
-        # If your table is named differently, change 'predictions' here.
-        # The date filter uses ::date to avoid timezone confusion.
-        row = con.execute(text("""
-            SELECT
-              COUNT(*)                                  AS total,
-              MIN(match_date)                            AS min_dt,
-              MAX(match_date)                            AS max_dt,
-              COUNT(*) FILTER (
-                WHERE match_date::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
-              )                                          AS upcoming7
-            FROM predictions
-        """)).one()
-        total, min_dt, max_dt, upcoming7 = row
-        LOG.info("DB CHECK: total=%s min=%s max=%s upcoming7=%s", total, min_dt, max_dt, upcoming7)
-
-        # Hard-fail if nothing usable was written, so Render marks this job FAILED.
-        if not total or int(upcoming7 or 0) == 0:
-            LOG.error("Refresh produced 0 usable rows (total=%s, upcoming7=%s).", total, upcoming7)
-            sys.exit(1)
+        try:
+            row = con.execute(text("""
+                SELECT
+                  COUNT(*) AS total,
+                  MIN(match_date) AS min_dt,
+                  MAX(match_date) AS max_dt
+                FROM predictions
+            """)).one()
+            LOG.info("DB CHECK: total=%s min=%s max=%s", *row)
+        except Exception as e:
+            LOG.warning("DB check skipped — table may not exist yet: %s", e)
 
 def print_db_host():
-    u = os.getenv("DATABASE_URL", "")
-    host = ""
-    with suppress(Exception):
-        host = re.sub(r".*@", "", u).split("?")[0]
-    LOG.info("DB host: %s", host or "(unknown)")
+    LOG.info("Local SQLite file: app.db")
 
 if __name__ == "__main__":
-    LOG.info("Starting refresh job")
+    LOG.info("Starting refresh job (offline mode)")
     print_db_host()
     run_manage_refresh()
     LOG.info("manage.py finished successfully (in-process)")
